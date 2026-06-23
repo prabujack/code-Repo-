@@ -1,69 +1,72 @@
 name: Build Push Update GitOps
 
 on:
-push:
-branches:
-- main
+  push:
+    branches:
+      - main
 
 env:
-DOCKER_IMAGE: manikandaprabu001/app-image
-GITOPS_REPO: prabujack/git-tops-action
+  DOCKER_IMAGE: manikandaprabu001/app-image
+  GITOPS_REPO: prabujack/git-tops-action
 
 jobs:
-build-and-deploy:
+  build-and-deploy:
+    runs-on: ubuntu-latest
 
+    steps:
+      - name: Checkout Application Source
+        uses: actions/checkout@v4
 
-runs-on: ubuntu-latest
+      - name: Generate Image Tag
+        id: tag
+        run: |
+          TAG=${GITHUB_SHA::7}
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
 
-steps:
+      - name: Login To Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
 
-  - name: Checkout Application Source
-    uses: actions/checkout@v4
+      - name: Build Docker Image
+        run: |
+          docker build \
+            -t $DOCKER_IMAGE:${{ steps.tag.outputs.tag }} \
+            -t $DOCKER_IMAGE:latest \
+            .
 
-  - name: Generate Image Tag
-    id: tag
-    run: |
-      TAG=${GITHUB_SHA::7}
-      echo "tag=$TAG" >> $GITHUB_OUTPUT
+      - name: Push Docker Image
+        run: |
+          docker push $DOCKER_IMAGE:${{ steps.tag.outputs.tag }}
+          docker push $DOCKER_IMAGE:latest
 
-  - name: Login To Docker Hub
-    uses: docker/login-action@v3
-    with:
-      username: ${{ secrets.DOCKER_USERNAME }}
-      password: ${{ secrets.DOCKER_PASSWORD }}
+      - name: Clone GitOps Repository
+        run: |
+          git clone https://x-access-token:${{ secrets.GITOPS_TOKEN }}@github.com/${GITOPS_REPO}.git gitops-repo
 
-  - name: Build Docker Image
-    run: |
-      docker build \
-        -t $DOCKER_IMAGE:${{ steps.tag.outputs.tag }} \
-        .
+      - name: Update Deployment Manifest
+        run: |
+          cd gitops-repo
 
-  - name: Push Docker Image
-    run: |
-      docker push $DOCKER_IMAGE:${{ steps.tag.outputs.tag }}
+          sed -i "s|image: .*|image: $DOCKER_IMAGE:${{ steps.tag.outputs.tag }}|g" apps/nginx/deployment.yaml
 
-  - name: Clone GitOps Repository
-    run: |
-      git clone https://x-access-token:${{ secrets.GITOPS_TOKEN }}@github.com/${GITOPS_REPO}.git
+          echo "Updated deployment.yaml:"
+          cat apps/nginx/deployment.yaml
 
-  - name: Update Deployment Manifest
-    run: |
-      cd gitops-repo
+      - name: Commit and Push Changes
+        run: |
+          cd gitops-repo
 
-      sed -i "s|image: .*|image: $DOCKER_IMAGE:${{ steps.tag.outputs.tag }}|g" \
-      apps/nginx/deployment.yaml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      cat apps/nginx/deployment.yaml
+          git add apps/nginx/deployment.yaml
 
-  - name: Commit Changes
-    run: |
-      cd gitops-repo
+          if git diff --cached --quiet; then
+            echo "No changes detected"
+            exit 0
+          fi
 
-      git config user.name "prabujack"
-      git config user.email "prabujack599@gmail.com"
-
-      git add .
-
-      git commit -m "Update image tag to ${{ steps.tag.outputs.tag }}" || echo "No changes"
-
-      git push
+          git commit -m "Update image tag to ${{ steps.tag.outputs.tag }}"
+          git push origin main
