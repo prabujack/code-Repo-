@@ -49,10 +49,10 @@ jobs:
         run: |
           cd gitops-repo
 
-          sed -i "s|image: .*|image: $DOCKER_IMAGE:${{ steps.tag.outputs.tag }}|g" apps/nginx/deployment.yaml
+          sed -i "s|image: .*|image: $DOCKER_IMAGE:${{ steps.tag.outputs.tag }}|g" deployment.yaml
 
           echo "Updated deployment.yaml:"
-          cat apps/nginx/deployment.yaml
+          cat deployment.yaml
 
       - name: Commit and Push Changes
         run: |
@@ -61,7 +61,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add apps/nginx/deployment.yaml
+          git add deployment.yaml
 
           if git diff --cached --quiet; then
             echo "No changes detected"
